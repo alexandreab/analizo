@@ -16,8 +16,8 @@ my $extractor2 = Analizo::Extractor->load('Clang');
 $extractor2->process('t/samples/hello_world/c');
 my $hello_world = $extractor2->model;
 
-print(Dumper($animals)) if $ENV{DEBUG};
-print(Dumper($hello_world)) if $ENV{DEBUG};
+print(Dumper($animals)); # FIXME remove this
+print(Dumper($hello_world)); # FIXME remove this
 
 sub cpp_classes : Tests {
   my @expected = qw(Animal Cat Dog Mammal);
@@ -50,7 +50,14 @@ sub cpp_methods : Test {
   is_deeply($got, \@expected);
 }
 
-# TODO C functions
+sub c_functions : Tests {
+  my @expected = qw(hello_world_destroy hello_world_new hello_world_say);
+  my @got = sort(@{$hello_world->{modules}->{hello_world}->{functions}});
+  is_deeply(\@got, \@expected, 'functions in hello_world module');
+
+  my $main_functions = $hello_world->{modules}->{main}->{functions};
+  is_deeply($main_functions, ['main'], 'functions in main module');
+}
 
 # TODO - based on functionality from doxyparse extractor
 #

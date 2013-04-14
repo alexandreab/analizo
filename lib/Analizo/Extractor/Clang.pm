@@ -36,8 +36,6 @@ sub _visit_node($$$) {
     my $kind = $node->kind->spelling;
     my ($file, $line, $column) = $node->location();
 
-    print STDERR "$name($kind)\n" if $ENV{DEBUG}; # FIXME
-
     # FIXME find other way of skipping nodes outside of the analyzed tree?
     if ($file =~ m/^\/usr/) {
         return;
@@ -45,21 +43,38 @@ sub _visit_node($$$) {
 
     if ($kind eq 'ClassDecl') {
       $self->model->declare_module($name);
-      my $superclass = _find_superclass($node);
-      if ($superclass) {
-        if (! grep { $_ eq $superclass } $self->model->inheritance($name)) {
-          $self->model->add_inheritance($node->spelling, $superclass);
+      _find_children_by_kind($node, 'C++ base class specifier',
+        sub {
+          my ($child) = @_;
+          my $superclass = $child->spelling;
+          $superclass =~ s/class //; # FIXME should follow the reference to the actual class node instead
+          if (! grep { $_ eq $superclass } $self->model->inheritance($name)) {
+            $self->model->add_inheritance($name, $superclass);
+          }
         }
-      }
-      for my $method (_find_methods($node)) {
-        $self->model->declare_function($name, $method, $method);
-      }
+      );
+      _find_children_by_kind($node, 'CXXMethod',
+        sub {
+          my ($child) = @_;
+          my $method = $child->spelling;
+          $self->model->declare_function($name, $method, $method);
+        }
+      );
     }
 
     if ($is_c_code && $kind eq 'TranslationUnit') {
       my $module_name = basename($name);
       $module_name =~ s/\.\w+$//;
       $self->model->declare_module($module_name);
+      _find_children_by_kind($node, 'FunctionDecl',
+        sub {
+          my ($child) = @_;
+          my $function = $child->spelling;
+          my ($child_file) = $child->location;
+          return if ($child_file ne $name);
+          $self->model->declare_function($module_name, $function, $function);
+        }
+      );
     }
 
     my $children = $node->children;
@@ -68,27 +83,13 @@ sub _visit_node($$$) {
     }
 }
 
-sub _find_superclass($) {
-  my ($node) = @_;
+sub _find_children_by_kind($$$) {
+  my ($node, $kind, $callback) = @_;
   for my $child (@{$node->children}) {
-    if ($child->kind->spelling eq 'C++ base class specifier') {
-      my $name = $child->spelling;
-      $name =~ s/class //; # FIXME should follow the reference instead
-      return $name;
+    if ($child->kind->spelling eq $kind) {
+      &$callback($child);
     }
   }
-  return undef;
-}
-
-sub _find_methods($) {
-  my ($node) = @_;
-  my @list = ();
-  for my $child (@{$node->children}) {
-    if ($child->kind->spelling eq 'CXXMethod') {
-      push @list, $child->spelling;
-    }
-  }
-  return @list;
 }
 
 1;
